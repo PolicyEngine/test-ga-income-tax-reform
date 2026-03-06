@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* TODO: Replace @theme block with @import "@policyengine/ui-kit/theme.css" when published */
+/* TODO: Replace with @import "@policyengine/ui-kit/theme.css" when published */
 @theme inline {
   --color-primary: #2C7A7B;
   --color-background: #FFFFFF;

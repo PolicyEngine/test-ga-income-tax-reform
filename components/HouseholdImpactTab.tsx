@@ -156,10 +156,10 @@ export default function HouseholdImpactTab({
       {/* Marginal tax rate chart */}
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-1">
-          Marginal tax rate breakdown
+          Marginal tax rate comparison
         </h2>
         <p className="text-sm text-muted-foreground mb-4">
-          Shows how each policy component contributes to the marginal rate
+          Shows marginal tax rates under baseline and reform across earnings
         </p>
         <ResponsiveContainer width="100%" height={400}>
           <BarChart data={mtrData}>

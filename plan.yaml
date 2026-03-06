@@ -31,13 +31,53 @@ custom_modal:
     dataset. Neither the precomputed nor the API pattern supports arbitrary
     reform microsimulation.
   policyengine_package: policyengine-us
+  backend_pattern: fastapi-modal-asgi
+  # Follow the ACA-Calc pattern: FastAPI app deployed via modal.asgi_app()
+  # with @modal.concurrent for parallel request handling.
+
+  # ──────────────────────────────────────────────────────────────────────
+  # IMPORTANT: Verified parameter structure notes for the builder agent
+  # ──────────────────────────────────────────────────────────────────────
+  #
+  # GA tax rate structure:
+  #   The GA income tax uses a BRACKET structure with 6 brackets at
+  #   gov.states.ga.tax.income.main.{filing_status}
+  #   As of 2025, ALL 6 brackets are set to the same flat rate (5.19%).
+  #   To change the flat rate, the reform must update ALL bracket rates.
+  #   Example bracket path:
+  #     gov.states.ga.tax.income.main.single.brackets[N].rate
+  #   where N = 0..5, all set to the same value.
+  #
+  # GA standard deduction:
+  #   gov.states.ga.tax.income.deductions.standard.amount
+  #   Filing-status-indexed: SINGLE=$12,000, JOINT=$24,000,
+  #   HEAD_OF_HOUSEHOLD=$12,000, SEPARATE=$12,000 (as of 2024+).
+  #
+  # GA CTC:
+  #   gov.states.ga.tax.income.credits.ctc.amount = $250 (effective 2026-01-01)
+  #   gov.states.ga.tax.income.credits.ctc.age_threshold = 6 (effective 2026-01-01)
+  #   The CTC is currently NON-REFUNDABLE (subtracted at the
+  #   ga_income_tax_before_refundable_credits level).
+  #   Making it refundable requires a reform modifier that moves ga_ctc
+  #   from non-refundable to refundable credits.
+  #   There is NO phase-out parameter in current law. Adding phase-out
+  #   requires a custom variable or reform modifier.
+  #
+  # Household computation approach:
+  #   Use the policyengine-us "axes" pattern to sweep employment_income
+  #   from 0 to 500k in a single Simulation call (like ACA-Calc).
+  #   This generates the full earnings-axis data in one call rather than
+  #   running hundreds of separate simulations.
+
   endpoints:
     - name: household-impact
       method: POST
       description: >
         Computes household-level tax and benefit results across a range of
-        earnings levels for both baseline and reform scenarios. Returns
-        arrays suitable for line charts and summary cards.
+        earnings levels for both baseline and reform scenarios. Uses the
+        policyengine-us axes pattern to sweep employment_income in a single
+        Simulation call. Returns arrays suitable for line charts plus a
+        summary at the user's specific income level.
       inputs:
         - name: filing_status
           type: string
@@ -88,7 +128,7 @@ custom_modal:
       outputs:
         - name: earnings_axis
           type: array[number]
-          description: Array of earnings levels (e.g., 0 to 500k in 1k steps)
+          description: Array of earnings levels (0 to 500k, ~100 points)
         - name: baseline_net_income
           type: array[number]
         - name: reform_net_income
@@ -119,18 +159,20 @@ custom_modal:
               type: number
       policyengine_variables:
         - employment_income
-        - state_income_tax
-        - ga_income_tax
-        - ga_ctc
+        - ga_income_tax       # TaxUnit — GA income tax after refundable credits
+        - ga_ctc              # TaxUnit — Georgia Child Tax Credit
         - household_net_income
         - household_tax
         - household_benefits
         - household_market_income
+        - state_income_tax
       policyengine_parameters:
-        - gov.states.ga.tax.income.main.single
-        - gov.states.ga.tax.income.main.joint
-        - gov.states.ga.tax.income.main.head_of_household
-        - gov.states.ga.tax.income.deductions.standard.amount
+        - gov.states.ga.tax.income.main.single       # 6 brackets, all same rate
+        - gov.states.ga.tax.income.main.joint         # 6 brackets, all same rate
+        - gov.states.ga.tax.income.main.head_of_household  # 6 brackets, all same rate
+        - gov.states.ga.tax.income.main.separate      # 6 brackets, all same rate
+        - gov.states.ga.tax.income.main.surviving_spouse   # 6 brackets, all same rate
+        - gov.states.ga.tax.income.deductions.standard.amount  # filing-status-indexed
         - gov.states.ga.tax.income.credits.ctc.amount
         - gov.states.ga.tax.income.credits.ctc.age_threshold
 
@@ -140,6 +182,8 @@ custom_modal:
         Runs microsimulation comparing baseline to reform using the Enhanced
         CPS dataset. Returns aggregate revenue change, winner/loser counts,
         poverty impact, and decile-level average income changes.
+        This endpoint is expensive (~30-60s). Consider implementing Modal
+        Dict caching (like ACA-Calc) with a hash of reform params as key.
       inputs:
         - name: reform
           type: object
@@ -174,15 +218,21 @@ custom_modal:
         - is_child
         - household_income_decile
         - state_income_tax
+        - ga_income_tax
         - ga_ctc
 
 tech_stack:
+  # Fixed - not configurable
   framework: react-nextjs
   ui: "@policyengine/ui-kit"
   styling: tailwind-with-design-tokens
   font: inter
   testing: vitest
   charts: recharts
+  state_management: "@tanstack/react-query"
+  http_client: axios
+  # Note: @policyengine/ui-kit must be added to package.json (currently missing)
+  # Run: bun add @policyengine/ui-kit
 
 components:
   # ─── LEFT SIDEBAR ───
@@ -345,6 +395,12 @@ components:
       - variable: reform_net_income
         label: "Reform"
         color: chart-1
+    annotation:
+      type: vertical_line
+      variable: income
+      label: "Your income"
+      color: muted-foreground
+      stroke_style: dotted
     responsive:
       mobile_height: 250
       desktop_height: 400
@@ -375,10 +431,10 @@ components:
   - type: chart
     id: marginal-rate-waterfall
     tab: household-impact
-    chart_type: bar
+    chart_type: line
     component_ref: "app-v2:ChartContainer"
-    title: "Marginal tax rate breakdown"
-    description: "Shows how each policy component contributes to the marginal rate"
+    title: "Marginal tax rate comparison"
+    description: "Shows marginal tax rates under baseline and reform across earnings"
     x:
       variable: earnings_axis
       label: "Employment income"
@@ -391,6 +447,9 @@ components:
       - variable: reform_mtr
         label: "Reform MTR"
         color: chart-1
+    y_axis:
+      format: percent
+      domain: [0, 0.6]
     responsive:
       mobile_height: 250
       desktop_height: 400
