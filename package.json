@@ -1,0 +1,33 @@
+{
+  "name": "ga-income-tax-reform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5",
+    "axios": "^1",
+    "next": "^14",
+    "react": "^19",
+    "react-dom": "^19",
+    "recharts": "^2",
+    "tailwindcss": "^4"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6",
+    "@testing-library/react": "^16",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4",
+    "jsdom": "^25",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}

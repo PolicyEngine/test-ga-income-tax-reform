@@ -1,0 +1,6 @@
+{
+  "plugins": {
+    "marketplaces": ["PolicyEngine/policyengine-claude"],
+    "auto_install": ["dashboard-builder@policyengine-claude"]
+  }
+}
