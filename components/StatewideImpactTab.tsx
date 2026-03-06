@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { ChartContainer, MetricCard } from "@policyengine/ui-kit";
 import { useStatewideImpact } from "@/lib/hooks/useCalculation";
 import type { ReformInputs } from "@/lib/api/types";
 
@@ -17,17 +18,29 @@ interface StatewideImpactTabProps {
   reform: ReformInputs;
 }
 
+const fmtCurrency = (v: number) =>
+  v.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+
 function formatCompact(v: number): string {
   if (Math.abs(v) >= 1_000_000_000) {
-    const b = v / 1_000_000_000;
-    return `${b < 0 ? "-" : ""}$${Math.abs(b).toFixed(1)}B`;
+    return (v / 1_000_000_000).toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 1,
+    }) + "B";
   }
   if (Math.abs(v) >= 1_000_000) {
-    const m = v / 1_000_000;
-    return `${m < 0 ? "-" : ""}$${Math.abs(m).toFixed(1)}M`;
+    return (v / 1_000_000).toLocaleString("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 1,
+    }) + "M";
   }
-  if (v < 0) return `-$${Math.abs(v).toLocaleString()}`;
-  return `$${v.toLocaleString()}`;
+  return fmtCurrency(v);
 }
 
 function formatCount(v: number): string {
@@ -36,117 +49,141 @@ function formatCount(v: number): string {
   return v.toLocaleString();
 }
 
+const TOOLTIP_STYLE = {
+  background: "var(--background)",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius)",
+  padding: "0.5rem 0.75rem",
+};
+
 export default function StatewideImpactTab({ reform }: StatewideImpactTabProps) {
-  const { data, isLoading, error } = useStatewideImpact(reform);
+  const { data, isLoading, isFetching, error } = useStatewideImpact(reform);
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
-        Loading...
+        <div className="flex flex-col items-center gap-2">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+          <span className="text-sm">Running microsimulation...</span>
+        </div>
       </div>
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <div className="flex items-center justify-center py-20 text-destructive">
-        Failed to load statewide impact data.
+        <div className="text-center">
+          <p className="font-semibold">Failed to load statewide impact data</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Microsimulation may take up to 60 seconds. Please try again.
+          </p>
+        </div>
       </div>
     );
   }
 
+  const povertyPp = (v: number) =>
+    `${v > 0 ? "+" : ""}${v.toFixed(2)} pp`;
+
   return (
-    <div className="flex flex-col gap-8">
+    <div className={`flex flex-col gap-8 transition-opacity duration-200${isFetching ? " opacity-60" : ""}`}>
       {/* Summary metrics */}
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-4">
           Statewide impact summary
         </h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-muted rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">Revenue change</p>
-            <p
-              className={`text-xl font-bold ${
-                data.revenue_change >= 0 ? "text-teal-600" : "text-destructive"
-              }`}
-            >
-              {formatCompact(data.revenue_change)}
-            </p>
-          </div>
-          <div className="bg-muted rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">Winners</p>
-            <p className="text-xl font-bold text-foreground">
-              {formatCount(data.winners)}
-            </p>
-          </div>
-          <div className="bg-muted rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">Losers</p>
-            <p className="text-xl font-bold text-foreground">
-              {formatCount(data.losers)}
-            </p>
-          </div>
-          <div className="bg-muted rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">Poverty rate change</p>
-            <p
-              className={`text-xl font-bold ${
-                data.poverty_rate_change <= 0 ? "text-teal-600" : "text-destructive"
-              }`}
-            >
-              {data.poverty_rate_change > 0 ? "+" : ""}
-              {data.poverty_rate_change.toFixed(2)} pp
-            </p>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <MetricCard
+            label="Revenue change"
+            value={formatCompact(data.revenue_change)}
+            trend={
+              data.revenue_change > 0
+                ? "positive"
+                : data.revenue_change < 0
+                  ? "negative"
+                  : "neutral"
+            }
+          />
+          <MetricCard
+            label="Winners"
+            value={formatCount(data.winners)}
+          />
+          <MetricCard
+            label="Losers"
+            value={formatCount(data.losers)}
+          />
+          <MetricCard
+            label="Poverty rate change"
+            value={povertyPp(data.poverty_rate_change)}
+            trend={
+              data.poverty_rate_change < 0
+                ? "positive"
+                : data.poverty_rate_change > 0
+                  ? "negative"
+                  : "neutral"
+            }
+          />
         </div>
       </section>
 
       {/* Poverty detail */}
       <section>
-        <h2 className="text-lg font-semibold text-foreground mb-4">Poverty impact</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-muted rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">Overall poverty rate change</p>
-            <p className="text-xl font-bold text-foreground">
-              {data.poverty_rate_change > 0 ? "+" : ""}
-              {data.poverty_rate_change.toFixed(2)} pp
-            </p>
-          </div>
-          <div className="bg-muted rounded-lg p-4">
-            <p className="text-sm text-muted-foreground">Child poverty rate change</p>
-            <p className="text-xl font-bold text-foreground">
-              {data.child_poverty_rate_change > 0 ? "+" : ""}
-              {data.child_poverty_rate_change.toFixed(2)} pp
-            </p>
-          </div>
+        <h2 className="text-lg font-semibold text-foreground mb-4">
+          Poverty impact
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <MetricCard
+            label="Overall poverty rate change"
+            value={povertyPp(data.poverty_rate_change)}
+            trend={
+              data.poverty_rate_change < 0
+                ? "positive"
+                : data.poverty_rate_change > 0
+                  ? "negative"
+                  : "neutral"
+            }
+          />
+          <MetricCard
+            label="Child poverty rate change"
+            value={povertyPp(data.child_poverty_rate_change)}
+            trend={
+              data.child_poverty_rate_change < 0
+                ? "positive"
+                : data.child_poverty_rate_change > 0
+                  ? "negative"
+                  : "neutral"
+            }
+          />
         </div>
       </section>
 
       {/* Decile chart */}
-      <section>
-        <h2 className="text-lg font-semibold text-foreground mb-1">
-          Average income change by decile
-        </h2>
-        <p className="text-sm text-muted-foreground mb-4">
-          Shows how the reform affects households across the income distribution
-        </p>
-        <ResponsiveContainer width="100%" height={350}>
-          <BarChart data={data.decile_impacts}>
+      <ChartContainer
+        title="Average income change by decile"
+        subtitle="Shows how the reform affects households across the income distribution"
+      >
+        <div className="h-72 sm:h-80 overflow-x-auto">
+          <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={data.decile_impacts}
+            margin={{ left: 10, right: 10, top: 10, bottom: 20 }}
+          >
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
             <XAxis
               dataKey="decile"
               tick={{ fontSize: 12, fontFamily: "var(--font-sans)" }}
-              label={{ value: "Income decile", position: "insideBottom", offset: -5 }}
             />
             <YAxis
               domain={["auto", "auto"]}
               tick={{ fontSize: 12, fontFamily: "var(--font-sans)" }}
-              tickFormatter={(v: number) =>
-                v < 0 ? `-$${Math.abs(v)}` : `$${v}`
-              }
+              tickFormatter={fmtCurrency}
             />
             <Tooltip
-              formatter={(v: number) =>
-                v < 0 ? `-$${Math.abs(v).toLocaleString()}` : `$${v.toLocaleString()}`
-              }
+              contentStyle={TOOLTIP_STYLE}
+              separator=": "
+              formatter={(v: number) => [fmtCurrency(v), "Avg. change"]}
+              labelFormatter={(v) => `Decile ${v}`}
             />
             <Bar dataKey="avg_income_change" name="Average income change">
               {data.decile_impacts.map((entry, index) => (
@@ -161,8 +198,9 @@ export default function StatewideImpactTab({ reform }: StatewideImpactTabProps) 
               ))}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
-      </section>
+          </ResponsiveContainer>
+        </div>
+      </ChartContainer>
     </div>
   );
 }

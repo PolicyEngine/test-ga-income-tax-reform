@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@policyengine/ui-kit": "../policyengine-ui-kit",
     "@tanstack/react-query": "^5",
     "axios": "^1",
     "next": "^14",

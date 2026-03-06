@@ -1,10 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import {
+  DashboardShell,
+  Header,
+  SidebarLayout,
+  InputPanel,
+  ResultsPanel,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+} from "@policyengine/ui-kit";
 import HouseholdConfig from "@/components/HouseholdConfig";
 import ReformParams from "@/components/ReformParams";
 import HouseholdImpactTab from "@/components/HouseholdImpactTab";
 import StatewideImpactTab from "@/components/StatewideImpactTab";
+import { updateHash, getCountryFromHash } from "@/lib/embedding";
 import type { HouseholdInputs, ReformInputs } from "@/lib/api/types";
 
 const DEFAULT_HOUSEHOLD: HouseholdInputs = {
@@ -18,7 +30,7 @@ const DEFAULT_HOUSEHOLD: HouseholdInputs = {
 
 const DEFAULT_REFORM: ReformInputs = {
   ga_tax_rate: 0.0519,
-  standard_deduction: 12000,
+  standard_deduction: null,
   ctc_amount: 250,
   ctc_max_age: 6,
   ctc_refundable: false,
@@ -29,64 +41,71 @@ const DEFAULT_REFORM: ReformInputs = {
 export default function Home() {
   const [household, setHousehold] = useState<HouseholdInputs>(DEFAULT_HOUSEHOLD);
   const [reform, setReform] = useState<ReformInputs>(DEFAULT_REFORM);
-  const [activeTab, setActiveTab] = useState<"household" | "statewide">("household");
+  const [countryId] = useState(() => getCountryFromHash());
+
+  const handleHouseholdChange = useCallback(
+    (next: HouseholdInputs) => {
+      setHousehold(next);
+      updateHash(
+        {
+          filing_status: next.filing_status,
+          income: String(next.income),
+          dependents: String(next.num_dependents),
+        },
+        countryId,
+      );
+    },
+    [countryId],
+  );
+
+  useEffect(() => {
+    updateHash(
+      {
+        filing_status: household.filing_status,
+        income: String(household.income),
+        dependents: String(household.num_dependents),
+      },
+      countryId,
+    );
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card px-6 py-4">
-        <h1 className="text-2xl font-bold text-foreground">
-          Georgia income tax & child tax credit reform calculator
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Model the impact of Georgia&apos;s flat income tax rate and Child Tax Credit on your household and statewide
-        </p>
-      </header>
-
-      <div className="flex flex-col md:flex-row">
-        {/* Sidebar */}
-        <aside className="w-full md:w-sidebar border-r border-border bg-card p-4 overflow-y-auto md:min-h-[calc(100vh-73px)]">
-          <HouseholdConfig value={household} onChange={setHousehold} />
-          <ReformParams
-            value={reform}
-            onChange={setReform}
-            filingStatus={household.filing_status}
-          />
-        </aside>
-
-        {/* Main content */}
-        <main className="flex-1 p-6">
-          {/* Tabs */}
-          <div className="flex gap-2 mb-6 border-b border-border">
-            <button
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "household"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setActiveTab("household")}
-            >
-              Household impact
-            </button>
-            <button
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === "statewide"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-              onClick={() => setActiveTab("statewide")}
-            >
-              Statewide impact
-            </button>
-          </div>
-
-          {activeTab === "household" ? (
-            <HouseholdImpactTab household={household} reform={reform} />
-          ) : (
-            <StatewideImpactTab reform={reform} />
-          )}
-        </main>
-      </div>
-    </div>
+    <DashboardShell>
+      <Header
+        variant="dark"
+        logo={
+          <span className="text-sm sm:text-lg font-bold text-white">
+            Georgia income tax &amp; CTC reform calculator
+          </span>
+        }
+      />
+      <SidebarLayout
+        sidebar={
+          <InputPanel title="Settings">
+            <HouseholdConfig value={household} onChange={handleHouseholdChange} />
+            <ReformParams
+              value={reform}
+              onChange={setReform}
+              filingStatus={household.filing_status}
+            />
+          </InputPanel>
+        }
+      >
+        <ResultsPanel>
+          <Tabs defaultValue="household">
+            <TabsList>
+              <TabsTrigger value="household">Household impact</TabsTrigger>
+              <TabsTrigger value="statewide">Statewide impact</TabsTrigger>
+            </TabsList>
+            <TabsContent value="household">
+              <HouseholdImpactTab household={household} reform={reform} />
+            </TabsContent>
+            <TabsContent value="statewide">
+              <StatewideImpactTab reform={reform} />
+            </TabsContent>
+          </Tabs>
+        </ResultsPanel>
+      </SidebarLayout>
+    </DashboardShell>
   );
 }
