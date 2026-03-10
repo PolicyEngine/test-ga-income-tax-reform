@@ -1,20 +1,16 @@
-.PHONY: dev dev-frontend dev-backend
+.PHONY: dev dev-frontend dev-backend deploy-worker
 .PHONY: build test lint clean
 
-# Start Modal backend + Next.js frontend together
+# Deploy workers, then start gateway + frontend together
 dev:
-	@echo "Starting Modal backend (ephemeral)..."
+	@echo "Deploying worker functions..."
+	@unset MODAL_TOKEN_ID MODAL_TOKEN_SECRET && modal deploy backend/app.py
+	@echo "Starting gateway (ephemeral)..."
 	@modal serve backend/modal_app.py & MODAL_PID=$$!; \
 	sleep 5; \
-	MODAL_URL=$$(modal app list --json 2>/dev/null | \
-	  python3 -c "import sys,json; apps=json.load(sys.stdin); \
-	  print(next((a['url'] for a in apps \
-	  if 'ga-income-tax-reform' in a.get('name','')), ''))"); \
-	if [ -z "$$MODAL_URL" ]; then \
-	  MODAL_URL="https://policyengine--ga-income-tax-reform-fastapi-app-dev.modal.run"; \
-	fi; \
+	MODAL_URL="https://policyengine--ga-income-tax-reform-fastapi-app-dev.modal.run"; \
 	PORT=4000; while [ $$PORT -le 4100 ] && nc -z 127.0.0.1 $$PORT 2>/dev/null; do PORT=$$((PORT + 1)); done; \
-	echo "Modal backend: $$MODAL_URL"; \
+	echo "Gateway: $$MODAL_URL"; \
 	echo "Frontend: http://localhost:$$PORT"; \
 	NEXT_PUBLIC_API_URL=$$MODAL_URL PORT=$$PORT bun run dev; \
 	kill $$MODAL_PID 2>/dev/null
@@ -25,9 +21,13 @@ dev-frontend:
 	echo "Starting dev server on http://localhost:$$PORT"; \
 	PORT=$$PORT bun run dev
 
-# Backend only
+# Backend only (gateway in dev mode — workers must already be deployed)
 dev-backend:
 	modal serve backend/modal_app.py
+
+# Deploy worker functions to Modal (required before gateway can spawn jobs)
+deploy-worker:
+	unset MODAL_TOKEN_ID MODAL_TOKEN_SECRET && modal deploy backend/app.py
 
 build:
 	bun run build

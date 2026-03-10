@@ -64,3 +64,9 @@ export interface StatewideResponse {
   child_poverty_rate_change: number;
   decile_impacts: DecileImpact[];
 }
+
+export interface StatusResponse {
+  status: "computing" | "ok" | "error";
+  result?: unknown;
+  message?: string;
+}

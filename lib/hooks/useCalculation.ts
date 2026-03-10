@@ -53,8 +53,8 @@ export function useStatewideImpact(reform: ReformInputs, enabled = true) {
 
   return useQuery<StatewideResponse>({
     queryKey: ["statewide-impact", debouncedReform],
-    queryFn: ({ signal }) =>
-      calculateStatewideImpact({ reform: debouncedReform }, signal),
+    queryFn: () =>
+      calculateStatewideImpact({ reform: debouncedReform }),
     staleTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData,
     enabled,
