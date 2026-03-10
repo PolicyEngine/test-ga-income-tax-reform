@@ -119,7 +119,15 @@ export default function HouseholdImpactTab({
   const yTicksMtr = niceTicks(mtrMin, mtrMax > 0.6 ? mtrMax : 0.6);
 
   return (
-    <div className={`flex flex-col gap-8 transition-opacity duration-200${isFetching ? " opacity-60" : ""}`}>
+    <div className="relative flex flex-col gap-8">
+      {isFetching && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 rounded-lg">
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+            <span className="text-sm text-muted-foreground">Recalculating...</span>
+          </div>
+        </div>
+      )}
       {/* Net income by earnings level */}
       <ChartContainer
         title="Net income by earnings level"

@@ -20,7 +20,7 @@ from pydantic import BaseModel
 app = modal.App("ga-income-tax-reform")
 
 image = modal.Image.debian_slim(python_version="3.11").pip_install(
-    "policyengine-us==1.225.0",
+    "policyengine-us==1.592.4",
     "fastapi",
 )
 
@@ -191,40 +191,42 @@ def build_axes_situation(
 
 
 # ---------------------------------------------------------------------------
-# Helper: apply reform parameters to a simulation
+# Helper: build a Reform object from ReformParams (policyengine-core 3.x API)
 # ---------------------------------------------------------------------------
 
 
-def apply_reform(sim, reform: ReformParams, filing_status: str):
-    """Apply reform parameters to a policyengine-us simulation's tax-benefit system."""
-    params = sim.tax_benefit_system.parameters
-    period = f"year:{YEAR}:10"
+def build_reform_object(reform_params: ReformParams):
+    """Build a policyengine-core Reform object using Reform.from_dict()."""
+    from policyengine_core.reforms import Reform
 
-    # 1. GA flat tax rate — update ALL brackets for ALL filing statuses
+    period_key = f"{YEAR}-01-01.2100-12-31"
+    reform_dict = {}
+
+    # 1. GA flat tax rate — all brackets for all filing statuses
+    #    Path format: gov.states.ga.tax.income.main.single[0].rate (no ".brackets")
     for fs, path in GA_TAX_BRACKET_PATHS.items():
-        bracket_node = params.get_child(path)
         for i in range(NUM_GA_TAX_BRACKETS):
-            bracket_node.brackets[i].rate.update(
-                period=period, value=reform.ga_tax_rate
-            )
+            reform_dict[f"{path}[{i}].rate"] = {
+                period_key: reform_params.ga_tax_rate
+            }
 
     # 2. Standard deduction
-    if reform.standard_deduction is not None:
-        std_ded = params.get_child(GA_STANDARD_DEDUCTION_PATH)
-        # Update the filing-status-indexed parameter
-        pe_fs = FILING_STATUS_MAP.get(filing_status, "SINGLE")
-        std_ded.update(period=period, value=reform.standard_deduction)
+    if reform_params.standard_deduction is not None:
+        reform_dict[GA_STANDARD_DEDUCTION_PATH] = {
+            period_key: reform_params.standard_deduction
+        }
 
     # 3. CTC amount
-    ctc_amount_param = params.get_child(GA_CTC_AMOUNT_PATH)
-    ctc_amount_param.update(period=period, value=reform.ctc_amount)
+    reform_dict[GA_CTC_AMOUNT_PATH] = {
+        period_key: reform_params.ctc_amount
+    }
 
     # 4. CTC age threshold
-    ctc_age_param = params.get_child(GA_CTC_AGE_PATH)
-    ctc_age_param.update(period=period, value=reform.ctc_max_age)
+    reform_dict[GA_CTC_AGE_PATH] = {
+        period_key: reform_params.ctc_max_age
+    }
 
-    # Reset caches after parameter changes
-    sim.tax_benefit_system.reset_parameter_caches()
+    return Reform.from_dict(reform_dict, "policyengine_us")
 
 
 # ---------------------------------------------------------------------------
@@ -236,9 +238,11 @@ def run_household_sim(situation: dict, reform: ReformParams | None, filing_statu
     """Run a single household simulation, optionally with reform, and return results."""
     from policyengine_us import Simulation
 
-    sim = Simulation(situation=situation)
     if reform is not None:
-        apply_reform(sim, reform, filing_status)
+        reform_obj = build_reform_object(reform)
+        sim = Simulation(situation=situation, reform=reform_obj)
+    else:
+        sim = Simulation(situation=situation)
 
     net_income = sim.calculate("household_net_income", YEAR).tolist()
     state_tax = sim.calculate("state_income_tax", YEAR).tolist()
@@ -362,40 +366,34 @@ def statewide_impact_endpoint(req: StatewideImpactRequest):
     import numpy as np
     from policyengine_us import Microsimulation
 
-    # Build reform function
-    reform_params = req.reform
-
-    def reform_modifier(sim):
-        apply_reform(sim, reform_params, filing_status="single")
+    reform_obj = build_reform_object(req.reform)
 
     # Run baseline microsimulation
+    # Use calc() which returns MicroSeries with proper weighting, mapped to person level
     baseline = Microsimulation()
-    baseline_net = baseline.calculate("household_net_income", YEAR)
-    baseline_tax = baseline.calculate("state_income_tax", YEAR)
-    baseline_weights = baseline.calculate("household_weight", YEAR)
-    baseline_poverty = baseline.calculate("in_poverty", YEAR)
-    baseline_is_child = baseline.calculate("is_child", YEAR)
-    baseline_person_weight = baseline.calculate("person_weight", YEAR)
-    baseline_decile = baseline.calculate("household_income_decile", YEAR)
+    baseline_net = baseline.calc("household_net_income", period=YEAR, map_to="person").values
+    baseline_tax = baseline.calc("state_income_tax", period=YEAR, map_to="person").values
+    baseline_person_weight = baseline.calc("person_weight", period=YEAR).values
+    baseline_poverty = baseline.calc("in_poverty", period=YEAR, map_to="person").values
+    baseline_is_child = baseline.calc("is_child", period=YEAR).values
+    baseline_decile = baseline.calc("household_income_decile", period=YEAR, map_to="person").values
 
     # Run reform microsimulation
-    from policyengine_us import Microsimulation as ReformMicrosim
-
-    reform = ReformMicrosim(reform=reform_modifier)
-    reform_net = reform.calculate("household_net_income", YEAR)
-    reform_tax = reform.calculate("state_income_tax", YEAR)
-    reform_poverty = reform.calculate("in_poverty", YEAR)
+    reform = Microsimulation(reform=reform_obj)
+    reform_net = reform.calc("household_net_income", period=YEAR, map_to="person").values
+    reform_tax = reform.calc("state_income_tax", period=YEAR, map_to="person").values
+    reform_poverty = reform.calc("in_poverty", period=YEAR, map_to="person").values
 
     # Revenue change (positive = government gains revenue)
     revenue_change = float(
-        np.sum((reform_tax - baseline_tax) * baseline_weights)
+        np.sum((reform_tax - baseline_tax) * baseline_person_weight)
     )
 
     # Winners / losers / unchanged
     net_diff = reform_net - baseline_net
-    winners = int(np.sum(baseline_weights[net_diff > 1]))
-    losers = int(np.sum(baseline_weights[net_diff < -1]))
-    unchanged = int(np.sum(baseline_weights[np.abs(net_diff) <= 1]))
+    winners = int(np.sum(baseline_person_weight[net_diff > 1]))
+    losers = int(np.sum(baseline_person_weight[net_diff < -1]))
+    unchanged = int(np.sum(baseline_person_weight[np.abs(net_diff) <= 1]))
 
     # Poverty rate change
     baseline_poverty_rate = float(
@@ -407,14 +405,14 @@ def statewide_impact_endpoint(req: StatewideImpactRequest):
     poverty_rate_change = round(reform_poverty_rate - baseline_poverty_rate, 4)
 
     # Child poverty rate change
-    child_mask = baseline_is_child.values > 0
+    child_mask = baseline_is_child > 0
     if child_mask.sum() > 0:
-        child_weights = baseline_person_weight.values[child_mask]
+        child_weights = baseline_person_weight[child_mask]
         bl_child_pov = float(
-            np.average(baseline_poverty.values[child_mask], weights=child_weights)
+            np.average(baseline_poverty[child_mask], weights=child_weights)
         )
         rf_child_pov = float(
-            np.average(reform_poverty.values[child_mask], weights=child_weights)
+            np.average(reform_poverty[child_mask], weights=child_weights)
         )
         child_poverty_rate_change = round(rf_child_pov - bl_child_pov, 4)
     else:
@@ -423,13 +421,13 @@ def statewide_impact_endpoint(req: StatewideImpactRequest):
     # Decile impacts
     decile_impacts = []
     for d in range(1, 11):
-        mask = baseline_decile.values == d
+        mask = baseline_decile == d
         if mask.sum() > 0:
-            weights_d = baseline_weights.values[mask]
-            diff_d = net_diff.values[mask]
+            weights_d = baseline_person_weight[mask]
+            diff_d = net_diff[mask]
             avg_change = float(np.average(diff_d, weights=weights_d))
             bl_avg = float(
-                np.average(baseline_net.values[mask], weights=weights_d)
+                np.average(baseline_net[mask], weights=weights_d)
             )
             pct = avg_change / bl_avg if bl_avg != 0 else 0.0
             decile_impacts.append(

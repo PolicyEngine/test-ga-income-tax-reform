@@ -16,6 +16,7 @@ import type { ReformInputs } from "@/lib/api/types";
 
 interface StatewideImpactTabProps {
   reform: ReformInputs;
+  enabled?: boolean;
 }
 
 const fmtCurrency = (v: number) =>
@@ -56,8 +57,8 @@ const TOOLTIP_STYLE = {
   padding: "0.5rem 0.75rem",
 };
 
-export default function StatewideImpactTab({ reform }: StatewideImpactTabProps) {
-  const { data, isLoading, isFetching, error } = useStatewideImpact(reform);
+export default function StatewideImpactTab({ reform, enabled = true }: StatewideImpactTabProps) {
+  const { data, isLoading, isFetching, error } = useStatewideImpact(reform, enabled);
 
   if (isLoading) {
     return (
@@ -87,7 +88,15 @@ export default function StatewideImpactTab({ reform }: StatewideImpactTabProps) 
     `${v > 0 ? "+" : ""}${v.toFixed(2)} pp`;
 
   return (
-    <div className={`flex flex-col gap-8 transition-opacity duration-200${isFetching ? " opacity-60" : ""}`}>
+    <div className="relative flex flex-col gap-8">
+      {isFetching && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 rounded-lg">
+          <div className="flex flex-col items-center gap-2">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary" />
+            <span className="text-sm text-muted-foreground">Recalculating...</span>
+          </div>
+        </div>
+      )}
       {/* Summary metrics */}
       <section>
         <h2 className="text-lg font-semibold text-foreground mb-4">

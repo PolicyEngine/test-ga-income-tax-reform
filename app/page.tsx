@@ -11,6 +11,7 @@ import {
   TabsList,
   TabsTrigger,
   TabsContent,
+  logos,
 } from "@policyengine/ui-kit";
 import HouseholdConfig from "@/components/HouseholdConfig";
 import ReformParams from "@/components/ReformParams";
@@ -41,6 +42,7 @@ const DEFAULT_REFORM: ReformInputs = {
 export default function Home() {
   const [household, setHousehold] = useState<HouseholdInputs>(DEFAULT_HOUSEHOLD);
   const [reform, setReform] = useState<ReformInputs>(DEFAULT_REFORM);
+  const [activeTab, setActiveTab] = useState("household");
   const [countryId] = useState(() => getCountryFromHash());
 
   const handleHouseholdChange = useCallback(
@@ -74,11 +76,13 @@ export default function Home() {
       <Header
         variant="dark"
         logo={
-          <span className="text-sm sm:text-lg font-bold text-white">
-            Georgia income tax &amp; CTC reform calculator
-          </span>
+          <img src={logos.whiteWordmark} alt="PolicyEngine" className="h-5" />
         }
-      />
+      >
+        <span className="ml-2 text-sm sm:text-lg font-bold text-white">
+          Georgia income tax &amp; CTC reform calculator
+        </span>
+      </Header>
       <SidebarLayout
         sidebar={
           <InputPanel title="Settings">
@@ -92,7 +96,7 @@ export default function Home() {
         }
       >
         <ResultsPanel>
-          <Tabs defaultValue="household">
+          <Tabs defaultValue="household" onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="household">Household impact</TabsTrigger>
               <TabsTrigger value="statewide">Statewide impact</TabsTrigger>
@@ -101,7 +105,7 @@ export default function Home() {
               <HouseholdImpactTab household={household} reform={reform} />
             </TabsContent>
             <TabsContent value="statewide">
-              <StatewideImpactTab reform={reform} />
+              <StatewideImpactTab reform={reform} enabled={activeTab === "statewide"} />
             </TabsContent>
           </Tabs>
         </ResultsPanel>

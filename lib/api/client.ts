@@ -9,13 +9,16 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://policyengine--ga-income-tax-reform-fastapi-app.modal.run";
 
+console.log("[api] API_BASE_URL:", API_BASE_URL);
+
 /**
  * Calculate household impacts across earnings levels.
  * Calls POST /household-impact on the Modal backend.
  */
 export async function calculateHouseholdImpact(
-  request: HouseholdRequest
+  request: HouseholdRequest,
 ): Promise<HouseholdResponse> {
+  console.log("[api] household-impact request:", JSON.stringify(request.reform));
   const res = await fetch(`${API_BASE_URL}/household-impact`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -25,7 +28,9 @@ export async function calculateHouseholdImpact(
     const text = await res.text().catch(() => "");
     throw new Error(`Household impact API error ${res.status}: ${text}`);
   }
-  return res.json();
+  const data = await res.json();
+  console.log("[api] household-impact response summary:", data.summary);
+  return data;
 }
 
 /**
@@ -33,12 +38,14 @@ export async function calculateHouseholdImpact(
  * Calls POST /statewide-impact on the Modal backend.
  */
 export async function calculateStatewideImpact(
-  request: StatewideRequest
+  request: StatewideRequest,
+  signal?: AbortSignal,
 ): Promise<StatewideResponse> {
   const res = await fetch(`${API_BASE_URL}/statewide-impact`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
+    signal,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");

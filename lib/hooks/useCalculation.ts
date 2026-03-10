@@ -26,8 +26,8 @@ export function useHouseholdImpact(
   household: HouseholdInputs,
   reform: ReformInputs,
 ) {
-  const debouncedHousehold = useDebounce(household, 300);
-  const debouncedReform = useDebounce(reform, 300);
+  const debouncedHousehold = useDebounce(household, 800);
+  const debouncedReform = useDebounce(reform, 800);
 
   return useQuery<HouseholdResponse>({
     queryKey: ["household-impact", debouncedHousehold, debouncedReform],
@@ -48,13 +48,15 @@ export function useHouseholdImpact(
   });
 }
 
-export function useStatewideImpact(reform: ReformInputs) {
-  const debouncedReform = useDebounce(reform, 500);
+export function useStatewideImpact(reform: ReformInputs, enabled = true) {
+  const debouncedReform = useDebounce(reform, 1000);
 
   return useQuery<StatewideResponse>({
     queryKey: ["statewide-impact", debouncedReform],
-    queryFn: () => calculateStatewideImpact({ reform: debouncedReform }),
+    queryFn: ({ signal }) =>
+      calculateStatewideImpact({ reform: debouncedReform }, signal),
     staleTime: 10 * 60 * 1000,
     placeholderData: keepPreviousData,
+    enabled,
   });
 }
